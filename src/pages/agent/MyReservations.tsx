@@ -27,7 +27,7 @@ const ReservationModal: React.FC<{
 }> = ({ res, agencyId, onClose, onConfirmed }) => {
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState('')
-  const [paymentMethod, setPaymentMethod] = useState('agency_balance')
+  const [paymentMethod] = useState('agency_balance')
   const [bookingDate, setBookingDate] = useState(new Date().toISOString().slice(0,10))
   const [showConfirmForm, setShowConfirmForm] = useState(false)
   const [agencyData, setAgencyData] = useState<{ balance: number; booking_limit: number | null } | null>(null)

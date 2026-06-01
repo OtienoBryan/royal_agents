@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { agentApi } from '../../services/agentApi'
-import { BarChart3, Download, Calendar, Users, DollarSign, TrendingUp, Plane, Search } from 'lucide-react'
+import { BarChart3, Download, Users, DollarSign, TrendingUp, Plane, Search } from 'lucide-react'
 
 // Currency formatter — currency resolved at call-time so it updates when agency loads
 const makeFmt = (currency: string) => (n: number) => {

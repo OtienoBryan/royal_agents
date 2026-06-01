@@ -391,7 +391,7 @@ const Dashboard: React.FC = () => {
       <div>
         <p className="text-xs text-gray-400 font-medium">{dateStr}</p>
         <h1 className="text-xl font-bold text-gray-800 mt-0.5">
-          {greeting}{user?.firstName ? `, ${user.firstName}` : ''} 👋
+          {greeting}{user?.name ? `, ${user.name.split(' ')[0]}` : ''} 👋
         </h1>
       </div>
 

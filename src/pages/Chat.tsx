@@ -282,9 +282,9 @@ const Chat: React.FC = () => {
         createdAt: DateTime.now().setZone('Africa/Nairobi').toISO() || new Date().toISOString(),
         sender: {
           id: user.id,
-          name: `${user.firstName} ${user.lastName}`,
+          name: user.name,
           business_email: user.email,
-          role: user.role || 'admin',
+          role: 'agent',
           avatar_url: ''
         }
       }
