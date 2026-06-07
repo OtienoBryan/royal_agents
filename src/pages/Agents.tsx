@@ -209,7 +209,7 @@ const Agents: React.FC = () => {
             <User className="h-4 w-4 text-blue-600" />
             Agents
           </h1>
-          <p className="text-[11px] text-gray-600">Manage travel agents</p>
+          <p className="text-[11px] text-gray-600">Manage agents</p>
         </div>
         <button
           onClick={() => setShowAddModal(true)}
