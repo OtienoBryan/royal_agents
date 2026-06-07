@@ -367,7 +367,7 @@ const Agencies: React.FC = () => {
           className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-[11px]"
         >
           <Plus className="h-3 w-3" />
-          Add Agency
+          Add
         </button>
       </div>
 
