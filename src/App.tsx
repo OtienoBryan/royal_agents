@@ -8,6 +8,7 @@ import MyReservations from './pages/agent/MyReservations'
 import MyPassengers from './pages/agent/MyPassengers'
 import MyBalance from './pages/agent/MyBalance'
 import FlightSearch from './pages/agent/FlightSearch'
+import BookFlight from './pages/agent/BookFlight'
 import RevenueReport from './pages/agent/RevenueReport'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -26,6 +27,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
+
           <Route
             path="/*"
             element={
@@ -39,6 +41,7 @@ function App() {
                     <Route path="/passengers"   element={<MyPassengers />} />
                     <Route path="/balance"      element={<MyBalance />} />
                     <Route path="/flights"      element={<FlightSearch />} />
+                    <Route path="/book"         element={<BookFlight />} />
                     <Route path="/revenue"      element={<RevenueReport />} />
                     <Route path="*"             element={<Navigate to="/dashboard" replace />} />
                   </Routes>

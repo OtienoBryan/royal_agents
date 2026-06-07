@@ -423,9 +423,10 @@ const RevenueReport: React.FC = () => {
                       <td className="px-3 py-2 text-center">
                         {r.bp.ticket_status ? (
                           <span className={`inline-flex px-1.5 py-0.5 text-[9px] font-semibold rounded-full ${
-                            r.bp.ticket_status === 'Boarded'  ? 'bg-green-100 text-green-800' :
-                            r.bp.ticket_status === 'CHECK IN' ? 'bg-blue-100 text-blue-800'  :
-                            r.bp.ticket_status === 'No Show'  ? 'bg-red-100 text-red-800'    :
+                            r.bp.ticket_status === 'USED'     ? 'bg-green-100 text-green-800' :
+                            r.bp.ticket_status === 'OPEN'     ? 'bg-blue-100 text-blue-800'  :
+                            r.bp.ticket_status === 'VOID'     ? 'bg-red-100 text-red-800'    :
+                            r.bp.ticket_status === 'REFUNDED' ? 'bg-yellow-100 text-yellow-800' :
                                                                  'bg-gray-100 text-gray-600'
                           }`}>{r.bp.ticket_status}</span>
                         ) : <span className="text-[10px] text-gray-300">—</span>}

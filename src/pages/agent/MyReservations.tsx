@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { agentApi } from '../../services/agentApi'
-import { Calendar, Search, Eye, CheckCircle, XCircle, Plane, MapPin, Clock, Users, DollarSign, AlertTriangle } from 'lucide-react'
+import { Search, Eye, CheckCircle, XCircle, Plane, MapPin, Clock, Calendar, Users, DollarSign, AlertTriangle } from 'lucide-react'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 const authHeader = () => ({ Authorization: `Bearer ${localStorage.getItem('agentToken')}`, 'Content-Type': 'application/json' })
@@ -27,8 +27,9 @@ const ReservationModal: React.FC<{
 }> = ({ res, agencyId, onClose, onConfirmed }) => {
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState('')
-  const [paymentMethod] = useState('agency_balance')
-  const [bookingDate, setBookingDate] = useState(new Date().toISOString().slice(0,10))
+  const [paymentMethod]      = useState('agency_balance')
+  const [bookingDate,        setBookingDate]        = useState(new Date().toISOString().slice(0,10))
+  const [paymentReference,   setPaymentReference]   = useState('')
   const [showConfirmForm, setShowConfirmForm] = useState(false)
   const [agencyData, setAgencyData] = useState<{ balance: number; booking_limit: number | null } | null>(null)
   const [balanceLoading, setBalanceLoading] = useState(false)
@@ -76,6 +77,7 @@ const ReservationModal: React.FC<{
         headers: authHeader(),
         body: JSON.stringify({
           flight_series_id: res.flight_series_id,
+          flight_id: res.flight_id || undefined,
           seat_reservation_id: res.id,
           passengers,
           payment_method: paymentMethod,
@@ -87,7 +89,10 @@ const ReservationModal: React.FC<{
           is_return_trip: res.trip_type === 'return',
           return_date: res.return_date ? String(res.return_date).slice(0, 10) : undefined,
           return_flight_series_id: res.return_flight_series_id || undefined,
-          notes: res.notes || undefined,
+          return_flight_id: res.return_flight_id || undefined,
+          notes:             res.notes       || undefined,
+          payment_reference: paymentReference  || undefined,
+          payment_account:   'Agency Balance',
         }),
       })
       if (!bookingRes.ok) {
@@ -158,17 +163,19 @@ const ReservationModal: React.FC<{
           {/* Reservation details */}
           <div className="space-y-1.5">
             {[
-              { label: 'Passenger', value: res.passenger_name, icon: <Users className="h-3 w-3 text-gray-400" /> },
-              { label: 'Email',    value: res.passenger_email },
-              { label: 'Phone',    value: res.passenger_phone },
+              { label: 'Passenger',   value: [res.passenger_title, res.passenger_name].filter(Boolean).join(' '), icon: <Users className="h-3 w-3 text-gray-400" /> },
+              { label: 'Email',       value: res.passenger_email },
+              { label: 'Phone',       value: res.passenger_phone },
+              { label: 'Nationality', value: res.country?.name },
+              { label: 'ID Type',     value: res.id_type ? String(res.id_type).replace('_', ' ') : undefined },
+              { label: 'ID Number',   value: res.id_number },
               { label: 'Travel Date', value: fmtDate(res.reservation_date), icon: <Calendar className="h-3 w-3 text-gray-400" /> },
               ...(res.trip_type === 'return' ? [{ label: 'Return Date', value: fmtDate(res.return_date) }] : []),
-              { label: 'Seats',    value: res.number_of_seats },
-              { label: 'Trip',     value: res.trip_type === 'return' ? '⇄ Return' : '→ One Way' },
-              { label: 'Fare',     value: fmt(res.fare_amount), icon: <DollarSign className="h-3 w-3 text-gray-400" /> },
-              { label: 'Payment',  value: res.payment_status },
-              { label: 'Nationality', value: res.country?.name },
-              { label: 'Notes',    value: res.notes },
+              { label: 'Seats',       value: res.number_of_seats },
+              { label: 'Trip',        value: res.trip_type === 'return' ? '⇄ Return' : '→ One Way' },
+              { label: 'Fare',        value: fmt(res.fare_amount), icon: <DollarSign className="h-3 w-3 text-gray-400" /> },
+              { label: 'Payment',     value: res.payment_status },
+              { label: 'Notes',       value: res.notes },
             ].filter(r => r.value).map(({ label, value, icon }) => (
               <div key={label} className="flex items-start justify-between text-[11px] py-0.5 border-b border-gray-50 last:border-0">
                 <span className="text-gray-500 flex items-center gap-1">{icon}{label}</span>
@@ -240,15 +247,35 @@ const ReservationModal: React.FC<{
                     </div>
                   ) : null}
 
-                  {/* Payment fields — only shown when balance is OK */}
+                  {/* Payment section — only shown when balance is OK */}
                   {!insufficientBalance && !belowLimit && (
                     <>
-                      <div>
-                        <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Payment Method</label>
-                        <div className="w-full px-2 py-1.5 text-[11px] border border-gray-200 rounded bg-gray-50 text-gray-700 font-medium">
-                          Agency Balance
+                      {/* Payment method row */}
+                      <div className="flex items-center justify-between py-1.5 border-b border-gray-100">
+                        <span className="text-[11px] text-gray-500">Payment Method</span>
+                        <span className="text-[11px] font-semibold text-gray-800">Agency Balance</span>
+                      </div>
+
+                      {/* ── Payment Reference section ── */}
+                      <div className="rounded-xl border-2 border-dashed border-[#1c2e61]/30 bg-[#1c2e61]/5 p-3 space-y-2.5">
+                        <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#1c2e61' }}>
+                          💳 Payment Details
+                        </p>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-gray-600 mb-1">
+                            Payment Reference <span className="text-gray-400 font-normal">(transaction / receipt no.)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={paymentReference}
+                            onChange={e => setPaymentReference(e.target.value)}
+                            placeholder="e.g. TXN-20240601-001"
+                            className="w-full px-2.5 py-1.5 text-[12px] border border-gray-300 rounded-lg focus:ring-1 focus:outline-none bg-white"
+                          />
                         </div>
                       </div>
+
+                      {/* Booking date */}
                       <div>
                         <label className="block text-[10px] font-medium text-gray-600 mb-0.5">Booking Date</label>
                         <input type="date" value={bookingDate} onChange={e => setBookingDate(e.target.value)}
@@ -284,9 +311,46 @@ const ReservationModal: React.FC<{
 
 const RESERVATION_TTL_MS = 10 * 60 * 1000 // 10 minutes
 
-const getCountdown = (createdAt: string | null | undefined, now: number) => {
-  if (!createdAt) return { mm: 0, ss: 0, expired: true, remaining: 0 }
-  const expiresAt = new Date(createdAt).getTime() + RESERVATION_TTL_MS
+const COUNTRY_TZ: Record<string, string> = {
+  'Kenya': 'Africa/Nairobi', 'Uganda': 'Africa/Kampala', 'Tanzania': 'Africa/Dar_es_Salaam',
+  'Rwanda': 'Africa/Kigali', 'Burundi': 'Africa/Bujumbura', 'Ethiopia': 'Africa/Addis_Ababa',
+  'Somalia': 'Africa/Mogadishu', 'South Sudan': 'Africa/Juba', 'Sudan': 'Africa/Khartoum',
+  'Djibouti': 'Africa/Djibouti', 'Eritrea': 'Africa/Asmara', 'Egypt': 'Africa/Cairo',
+  'South Africa': 'Africa/Johannesburg', 'Nigeria': 'Africa/Lagos', 'Ghana': 'Africa/Accra',
+  'Zambia': 'Africa/Lusaka', 'Zimbabwe': 'Africa/Harare', 'Mozambique': 'Africa/Maputo',
+  'Malawi': 'Africa/Blantyre', 'Botswana': 'Africa/Gaborone', 'Namibia': 'Africa/Windhoek',
+  'United Kingdom': 'Europe/London', 'United States': 'America/New_York',
+  'India': 'Asia/Kolkata', 'UAE': 'Asia/Dubai', 'United Arab Emirates': 'Asia/Dubai', 'China': 'Asia/Shanghai',
+}
+
+// Parse a datetime string that may lack timezone info as local time in `tz`
+const parseInTz = (s: string, tz: string): number => {
+  if (s.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(s)) return new Date(s).getTime()
+  const iso = s.includes('T') ? s : s.replace(' ', 'T')
+  const naiveUtcMs = new Date(iso + 'Z').getTime()
+  try {
+    const fmt = (timeZone: string) => new Intl.DateTimeFormat('en-US', {
+      timeZone, hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+    })
+    const get = (parts: Intl.DateTimeFormatPart[], type: string) =>
+      parseInt(parts.find(p => p.type === type)!.value, 10)
+    const ref = new Date(naiveUtcMs)
+    const utcParts = fmt('UTC').formatToParts(ref)
+    const tzParts  = fmt(tz).formatToParts(ref)
+    const toMs = (p: Intl.DateTimeFormatPart[]) =>
+      Date.UTC(get(p,'year'), get(p,'month')-1, get(p,'day'), get(p,'hour'), get(p,'minute'), get(p,'second'))
+    const offsetMs = toMs(utcParts) - toMs(tzParts)
+    return naiveUtcMs - offsetMs
+  } catch {
+    return naiveUtcMs
+  }
+}
+
+const getCountdown = (createdAt: string | null | undefined, now: number, tz = 'Africa/Nairobi') => {
+  if (!createdAt) return { mm: 10, ss: 0, expired: false, remaining: RESERVATION_TTL_MS }
+  const expiresAt = parseInTz(createdAt, tz) + RESERVATION_TTL_MS
   const remaining = Math.max(0, expiresAt - now)
   return {
     mm: Math.floor(remaining / 60000),
@@ -300,40 +364,28 @@ const getCountdown = (createdAt: string | null | undefined, now: number) => {
 const MyReservations: React.FC = () => {
   const { user } = useAuth()
   const agencyId = (user as any)?.agency_id ?? null
-  const today = new Date().toISOString().slice(0, 10)
+  const agentTz  = COUNTRY_TZ[(user as any)?.country ?? ''] ?? 'Africa/Nairobi'
   const [reservations, setReservations] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [dateFrom, setDateFrom] = useState(today)
-  const [dateTo, setDateTo]   = useState(today)
   const [selected, setSelected] = useState<any | null>(null)
   const [success, setSuccess] = useState('')
-  const [now, setNow] = useState(Date.now())
 
-  // Tick every second to drive countdown timers
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
-  }, [])
-
-  const load = () => {
+  const load = (agentId?: number) => {
     setLoading(true)
-    agentApi.getMyReservations(1, 1000)
+    agentApi.getMyReservations(1, 1000, agentId, 'reserved')
       .then(r => setReservations(r.reservations || []))
       .catch(console.error)
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { load() }, [])
+  // Wait for user to be resolved before fetching so agentId is always sent
+  useEffect(() => {
+    if (user?.id) load(user.id)
+  }, [user?.id])
 
-  // Only show 'reserved' status, filtered by reservation_date range and search
+  // Backend already filters to status='reserved'; apply search only
   const filtered = reservations.filter(r => {
-    if (r.status !== 'reserved') return false
-    if (r.reservation_date) {
-      const d = String(r.reservation_date).slice(0, 10)
-      if (dateFrom && d < dateFrom) return false
-      if (dateTo   && d > dateTo)   return false
-    }
     const q = search.toLowerCase()
     return !q || r.passenger_name?.toLowerCase().includes(q) || r.booking_reference?.toLowerCase().includes(q)
   })
@@ -341,9 +393,7 @@ const MyReservations: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-3">
       <div className="mb-3 flex items-center justify-between">
-        <h1 className="text-base font-bold text-gray-900 flex items-center gap-1.5">
-          <Calendar className="h-4 w-4" style={{ color: '#1c2e61' }} />Seat Reservations
-        </h1>
+        <h1 className="text-base font-bold text-gray-900">Seat Reservations</h1>
         <span className="text-[11px] text-gray-500">{filtered.length} active reservation{filtered.length !== 1 ? 's' : ''}</span>
       </div>
 
@@ -354,47 +404,19 @@ const MyReservations: React.FC = () => {
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-2.5 mb-3 flex flex-wrap gap-2 items-end">
-        {/* Search */}
-        <div className="relative flex-1 min-w-[160px]">
-          <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-1">Search</label>
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
-            <input type="text" placeholder="Name or reference…" value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full pl-7 pr-2 py-1.5 text-[11px] border border-gray-200 rounded-md focus:ring-1 focus:outline-none" />
-          </div>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-2.5 mb-3 flex gap-2 items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
+          <input type="text" placeholder="Search by name or reference…" value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full pl-7 pr-2 py-1.5 text-[11px] border border-gray-200 rounded-md focus:ring-1 focus:outline-none" />
         </div>
-
-        {/* Date From */}
-        <div>
-          <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-1">From</label>
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-            className="px-2 py-1.5 text-[11px] border border-gray-200 rounded-md focus:ring-1 focus:outline-none" />
-        </div>
-
-        {/* Date To */}
-        <div>
-          <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-1">To</label>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-            className="px-2 py-1.5 text-[11px] border border-gray-200 rounded-md focus:ring-1 focus:outline-none" />
-        </div>
-
-        {/* Today shortcut + clear */}
-        <div className="flex gap-1.5">
-          <button
-            onClick={() => { setDateFrom(today); setDateTo(today) }}
-            className="px-3 py-1.5 text-[11px] font-semibold rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors whitespace-nowrap">
-            Today
+        {search && (
+          <button onClick={() => setSearch('')}
+            className="px-3 py-1.5 text-[11px] font-semibold rounded-md border border-gray-200 text-red-500 hover:bg-red-50 transition-colors">
+            Clear
           </button>
-          {(dateFrom !== today || dateTo !== today || search) && (
-            <button
-              onClick={() => { setDateFrom(today); setDateTo(today); setSearch('') }}
-              className="px-3 py-1.5 text-[11px] font-semibold rounded-md border border-gray-200 text-red-500 hover:bg-red-50 transition-colors whitespace-nowrap">
-              Reset
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
@@ -405,32 +427,32 @@ const MyReservations: React.FC = () => {
                 <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Ref</th>
                 <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Passenger</th>
                 <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Flight</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">From</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">To</th>
                 <th className="px-3 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase">Seats</th>
                 <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase">Travel Date</th>
                 <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase">Fare</th>
-                <th className="px-3 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase">Time Remaining</th>
                 <th className="px-3 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan={8} className="py-8 text-center">
+                <tr><td colSpan={9} className="py-8 text-center">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 mx-auto" style={{ borderColor: '#1c2e61' }} />
                 </td></tr>
               ) : filtered.map((r: any) => {
-                const { mm, ss, expired } = getCountdown(r.created_at, now)
-                const isUrgent = !expired && mm === 0 && ss <= 60
                 return (
-                  <tr key={r.id} className={`transition-colors ${expired ? 'bg-red-50/40' : 'hover:bg-gray-50'}`}>
+                  <tr key={r.id} className="transition-colors hover:bg-gray-50">
                     <td className="px-3 py-2 text-[11px] font-mono font-semibold text-gray-900">{r.booking_reference}</td>
                     <td className="px-3 py-2 text-[11px] text-gray-800">{r.passenger_name}</td>
-                    <td className="px-3 py-2 text-[11px] text-gray-600">
-                      <div className="font-semibold">{r.flightSeries?.flt || '—'}</div>
-                      {r.flightSeries && (
-                        <div className="text-[10px] text-gray-400">
-                          {r.flightSeries.fromDestination?.code} → {r.flightSeries.toDestination?.code}
-                        </div>
-                      )}
+                    <td className="px-3 py-2 text-[11px] font-semibold text-gray-800">{r.flightSeries?.flt || '—'}</td>
+                    <td className="px-3 py-2 text-[11px] text-gray-700">
+                      <div className="font-medium">{r.flightSeries?.fromDestination?.name || '—'}</div>
+                      <div className="text-[10px] text-gray-400">{r.flightSeries?.fromDestination?.code}</div>
+                    </td>
+                    <td className="px-3 py-2 text-[11px] text-gray-700">
+                      <div className="font-medium">{r.flightSeries?.toDestination?.name || '—'}</div>
+                      <div className="text-[10px] text-gray-400">{r.flightSeries?.toDestination?.code}</div>
                     </td>
                     <td className="px-3 py-2 text-center text-[11px] text-gray-700">{r.number_of_seats}</td>
                     <td className="px-3 py-2 text-[11px] text-gray-500">
@@ -441,39 +463,23 @@ const MyReservations: React.FC = () => {
                     </td>
                     <td className="px-3 py-2 text-right text-[11px] font-medium text-gray-900">{fmt(r.fare_amount)}</td>
                     <td className="px-3 py-2 text-center">
-                      {expired ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-full">
-                          <XCircle className="h-3 w-3" />Time passed
-                        </span>
-                      ) : (
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold rounded-full tabular-nums ${
-                          isUrgent ? 'bg-red-100 text-red-700 animate-pulse' : mm < 5 ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'
-                        }`}>
-                          <Clock className="h-3 w-3" />
-                          {String(mm).padStart(2, '0')}:{String(ss).padStart(2, '0')}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <button onClick={() => setSelected(r)}
                           className="flex items-center gap-0.5 text-[10px] font-medium hover:opacity-80"
                           style={{ color: '#1c2e61' }}>
                           <Eye className="h-2.5 w-2.5" />View
                         </button>
-                        {!expired && (
-                          <button onClick={() => setSelected(r)}
-                            className="flex items-center gap-0.5 text-[10px] text-green-600 hover:text-green-800 font-medium">
-                            <CheckCircle className="h-2.5 w-2.5" />Confirm
-                          </button>
-                        )}
+                        <button onClick={() => setSelected(r)}
+                          className="flex items-center gap-0.5 text-[10px] text-green-600 hover:text-green-800 font-medium">
+                          <CheckCircle className="h-2.5 w-2.5" />Confirm
+                        </button>
                       </div>
                     </td>
                   </tr>
                 )
               })}
               {!loading && filtered.length === 0 && (
-                <tr><td colSpan={8} className="py-6 text-center text-[11px] text-gray-400">No active reservations.</td></tr>
+                <tr><td colSpan={9} className="py-6 text-center text-[11px] text-gray-400">No active reservations.</td></tr>
               )}
             </tbody>
           </table>
@@ -488,7 +494,7 @@ const MyReservations: React.FC = () => {
           onConfirmed={() => {
             setSuccess(`Reservation ${selected.booking_reference} confirmed as booking!`)
             setSelected(null)
-            load()
+            load(user?.id)
           }}
         />
       )}

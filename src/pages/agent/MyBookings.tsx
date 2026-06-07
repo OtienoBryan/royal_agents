@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { agentApi } from '../../services/agentApi'
-import { Ticket, Search, X, Plane, User, ChevronDown, ChevronUp, ArrowRight, RotateCcw } from 'lucide-react'
+import { Ticket, Search, X, Plane, User, ChevronDown, ChevronUp, ArrowRight, RotateCcw, Printer, Download } from 'lucide-react'
+import jsPDF from 'jspdf'
+import html2canvas from 'html2canvas'
 
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n)
 
@@ -14,9 +16,10 @@ const PAX_COLORS: Record<string, string> = {
 }
 
 const TICKET_STATUS_COLOR: Record<string, string> = {
-  'Boarded':  'bg-green-100 text-green-800',
-  'CHECK IN': 'bg-blue-100 text-blue-800',
-  'No Show':  'bg-red-100 text-red-800',
+  'OPEN':     'bg-blue-100 text-blue-800',
+  'USED':     'bg-green-100 text-green-800',
+  'VOID':     'bg-red-100 text-red-800',
+  'REFUNDED': 'bg-yellow-100 text-yellow-800',
 }
 
 // ─── Boarding Pass Card ───────────────────────────────────────────────────────
@@ -26,91 +29,173 @@ const BoardingPass: React.FC<{
   date: string | null
   pax: any
   bp: any
-}> = ({ leg, flight, date, pax, bp }) => {
-  const ticketStatus = bp?.ticket_status || null
+  bookingRef?: string
+}> = ({ leg, flight, date, pax, bp, bookingRef }) => {
   const from = flight?.fromDestination
   const to   = flight?.toDestination
+  const ticketStatus = bp?.ticket_status || null
+  const seed = pax?.pnr || bookingRef || 'ROYALAIR'
+  const bars = Array.from({ length: 28 }).map((_, i) => 16 + (seed.charCodeAt(i % seed.length) % 18))
 
   return (
-    <div className={`rounded-xl overflow-hidden border-2 ${leg === 'return' ? 'border-indigo-200' : 'border-[#1c2e61]/20'}`}>
-      {/* Ticket header strip */}
-      <div
-        className="px-4 py-2.5 flex items-center justify-between"
-        style={{ background: leg === 'return' ? '#3730a3' : '#1c2e61' }}
-      >
-        <div className="flex items-center gap-2">
-          <Plane className={`h-3.5 w-3.5 text-white ${leg === 'return' ? 'rotate-180' : ''}`} />
-          <span className="text-[11px] font-bold text-white uppercase tracking-wider">
-            {leg === 'outbound' ? 'Outbound' : 'Return'} · {flight?.flt || '—'}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold capitalize ${PAX_COLORS[bp?.passenger_type] || 'bg-white/20 text-white'}`}
-            style={!PAX_COLORS[bp?.passenger_type] ? { background: 'rgba(255,255,255,0.2)', color: '#fff' } : undefined}>
-            {bp?.passenger_type || 'adult'}
-          </span>
-          {ticketStatus && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${TICKET_STATUS_COLOR[ticketStatus] || 'bg-white/20 text-white'}`}>
-              {ticketStatus}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Ticket body */}
-      <div className="bg-white px-4 py-3">
-        {/* Route */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="text-center">
-            <p className="text-[24px] font-black text-gray-900 leading-none">{from?.code || '—'}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5 max-w-[80px] truncate">{from?.name || ''}</p>
-          </div>
-          <div className="flex-1 flex flex-col items-center px-2">
-            <div className="flex items-center gap-1 w-full">
-              <div className="h-px flex-1 bg-gray-200" />
-              <Plane className="h-4 w-4 text-gray-300" />
-              <div className="h-px flex-1 bg-gray-200" />
-            </div>
-            {flight?.std && (
-              <span className="text-[10px] text-gray-400 mt-0.5">{flight.std}{flight.sta ? ` → ${flight.sta}` : ''}</span>
-            )}
-          </div>
-          <div className="text-center">
-            <p className="text-[24px] font-black text-gray-900 leading-none">{to?.code || '—'}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5 max-w-[80px] truncate">{to?.name || ''}</p>
-          </div>
-        </div>
-
-        {/* Passenger + date row */}
-        <div className="flex items-end justify-between border-t border-dashed border-gray-200 pt-3">
+    <div className="boarding-pass bg-white rounded-lg shadow-lg overflow-hidden" style={{ minWidth: 560 }}>
+      {/* Header */}
+      <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white px-4 py-3">
+        <div className="flex justify-between items-center">
           <div>
-            <p className="text-[9px] font-semibold text-gray-400 uppercase">Passenger</p>
-            <p className="text-[13px] font-bold text-gray-900">{pax?.title ? `${pax.title} ` : ''}{pax?.name || '—'}</p>
-            <p className="text-[10px] font-mono text-gray-500 mt-0.5">PNR: {pax?.pnr || '—'}</p>
+            <h2 className="text-xl font-bold tracking-wide">ROYAL AIR</h2>
+            <p className="text-[11px] opacity-90 mt-0.5">Boarding Pass · {leg === 'return' ? 'Return' : 'Outbound'}</p>
           </div>
           <div className="text-right">
-            <p className="text-[9px] font-semibold text-gray-400 uppercase">Date</p>
-            <p className="text-[12px] font-bold text-gray-900">{fmtDate(date)}</p>
-            <p className="text-[11px] font-bold mt-0.5" style={{ color: '#1c2e61' }}>{fmt(Number(bp?.fare_amount || 0))}</p>
+            <p className="text-[10px] opacity-75 uppercase tracking-wider">Flight</p>
+            <p className="text-base font-bold">{flight?.flt || '—'}</p>
           </div>
         </div>
       </div>
 
-      {/* Tear line */}
-      <div className="flex items-center px-2 bg-gray-50">
-        <div className="w-3 h-3 rounded-full bg-gray-200 -ml-4 shrink-0" />
-        <div className="flex-1 border-t border-dashed border-gray-300 mx-1" />
-        <div className="w-3 h-3 rounded-full bg-gray-200 -mr-4 shrink-0" />
+      {/* Main Content */}
+      <div className="p-4">
+        <div className="grid grid-cols-3 gap-4">
+          {/* Left — Passenger Info */}
+          <div className="space-y-2">
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Passenger Name</p>
+              <p className="text-sm font-bold text-gray-900 leading-tight">
+                {pax?.title ? `${pax.title} ` : ''}{(pax?.name || '—').toUpperCase()}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">PNR</p>
+              <p className="text-sm font-bold text-gray-900 font-mono">{pax?.pnr || '—'}</p>
+              {bookingRef && <p className="text-[11px] text-gray-500 mt-0.5">{bookingRef}</p>}
+            </div>
+            <div className="flex items-start gap-3">
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Type</p>
+                <span className="inline-flex px-2 py-0.5 text-[11px] font-semibold rounded bg-blue-100 text-blue-800 capitalize">
+                  {bp?.passenger_type || 'adult'}
+                </span>
+              </div>
+              {pax?.nationality && (
+                <div>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Nationality</p>
+                  <p className="text-[12px] font-semibold text-gray-900">{pax.nationality}</p>
+                </div>
+              )}
+            </div>
+            {pax?.identification && (
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">ID / Passport</p>
+                <p className="text-[12px] font-semibold text-gray-900 font-mono">{pax.identification}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Middle — Route */}
+          <div className="space-y-2 border-l border-r border-gray-200 px-4">
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Route</p>
+              <div className="flex items-center justify-between">
+                <div className="text-center flex-1">
+                  <p className="text-2xl font-black text-gray-900">{from?.code || '—'}</p>
+                  <p className="text-[10px] text-gray-500 mt-1 leading-tight">{from?.name || 'Departure'}</p>
+                </div>
+                <div className="flex-1 mx-2">
+                  <div className="border-t-2 border-dashed border-gray-300 relative">
+                    <Plane className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 h-4 w-4 text-blue-600 bg-white p-0.5" />
+                  </div>
+                </div>
+                <div className="text-center flex-1">
+                  <p className="text-2xl font-black text-gray-900">{to?.code || '—'}</p>
+                  <p className="text-[10px] text-gray-500 mt-1 leading-tight">{to?.name || 'Arrival'}</p>
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-200">
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Date</p>
+                <p className="text-[12px] font-semibold text-gray-900">{fmtDate(date)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Time</p>
+                <p className="text-[12px] font-semibold text-gray-900">
+                  {flight?.std || '—'}{flight?.sta ? ` → ${flight.sta}` : ''}
+                </p>
+              </div>
+            </div>
+            {flight?.flight_type && (
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Flight Type</p>
+                <p className="text-[12px] font-semibold text-gray-900 capitalize">{flight.flight_type}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Right — Status + Barcode */}
+          <div className="space-y-2">
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Status</p>
+              <span className={`inline-flex px-2 py-0.5 text-[11px] font-semibold rounded ${
+                ticketStatus === 'USED'     ? 'bg-green-100 text-green-800' :
+                ticketStatus === 'OPEN'     ? 'bg-blue-100 text-blue-800' :
+                ticketStatus === 'VOID'     ? 'bg-red-100 text-red-800' :
+                ticketStatus === 'REFUNDED' ? 'bg-yellow-100 text-yellow-800' :
+                'bg-gray-100 text-gray-800'
+              }`}>
+                {ticketStatus || 'OPEN'}
+              </span>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Booking Date</p>
+              <p className="text-[12px] font-medium text-gray-900">{fmtDate(date)}</p>
+            </div>
+            <div className="pt-1">
+              <div className="bg-gray-50 h-16 rounded flex items-center justify-center p-2">
+                <div className="text-center w-full">
+                  <div className="flex items-end justify-center space-x-0.5 mb-1">
+                    {bars.map((h, i) => (
+                      <div key={i} className="w-0.5 bg-gray-800" style={{ height: `${h}px` }} />
+                    ))}
+                  </div>
+                  <p className="text-[9px] text-gray-500 font-mono">{bookingRef || pax?.pnr || '—'}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Barcode stub */}
-      <div className="bg-gray-50 px-4 py-2 flex items-center justify-between">
-        <div className="flex gap-0.5">
-          {Array.from({ length: 30 }).map((_, i) => (
-            <div key={i} className="w-0.5 bg-gray-400 opacity-60" style={{ height: i % 3 === 0 ? 16 : i % 2 === 0 ? 12 : 8 }} />
-          ))}
+      {/* Tear Line */}
+      <div className="border-t border-dashed border-gray-300 relative mx-1">
+        <div className="absolute -left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 bg-white rounded-full border border-dashed border-gray-300"></div>
+        <div className="absolute -right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 bg-white rounded-full border border-dashed border-gray-300"></div>
+      </div>
+
+      {/* Bottom Stub */}
+      <div className="bg-gray-50 px-4 py-2">
+        <div className="flex justify-between items-center">
+          <div className="flex-1">
+            <p className="text-[9px] text-gray-400 uppercase tracking-wider">Passenger</p>
+            <p className="text-[11px] font-bold text-gray-900 leading-tight mt-0.5">
+              {pax?.title ? `${pax.title} ` : ''}{(pax?.name || '—').toUpperCase()}
+            </p>
+          </div>
+          <div className="text-center mx-2">
+            <p className="text-[9px] text-gray-400 uppercase tracking-wider">From</p>
+            <p className="text-sm font-bold text-gray-900">{from?.code || '—'}</p>
+          </div>
+          <div className="text-center mx-2">
+            <Plane className="h-3.5 w-3.5 text-gray-400 mx-auto" />
+          </div>
+          <div className="text-center mx-2">
+            <p className="text-[9px] text-gray-400 uppercase tracking-wider">To</p>
+            <p className="text-sm font-bold text-gray-900">{to?.code || '—'}</p>
+          </div>
+          <div className="text-right flex-1">
+            <p className="text-[9px] text-gray-400 uppercase tracking-wider">Flight</p>
+            <p className="text-[12px] font-bold text-gray-900">{flight?.flt || '—'}</p>
+          </div>
         </div>
-        <p className="text-[9px] font-mono text-gray-400 ml-3">{pax?.pnr || '--------'}</p>
       </div>
     </div>
   )
@@ -122,6 +207,8 @@ const BookingDetailsModal: React.FC<{ bookingId: number; onClose: () => void }> 
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'tickets' | 'details'>('tickets')
   const [expandedPax, setExpandedPax] = useState<number | null>(null)
+  const [generatingPDF, setGeneratingPDF] = useState(false)
+  const boardingPassesRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     agentApi.getBooking(bookingId)
@@ -133,11 +220,53 @@ const BookingDetailsModal: React.FC<{ bookingId: number; onClose: () => void }> 
   const passengers: any[] = booking?.bookingPassengers || []
   const isReturn = booking?.is_return_trip
 
+  const handlePrint = () => window.print()
+
+  const handleDownloadPDF = async () => {
+    const elements = boardingPassesRef.current?.querySelectorAll('.boarding-pass')
+    if (!elements?.length || !booking) return
+    setGeneratingPDF(true)
+    try {
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [203, 82.5] })
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i] as HTMLElement
+        const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false })
+        const imgData = canvas.toDataURL('image/png', 1.0)
+        const cAR = canvas.width / canvas.height
+        const pAR = 203 / 82.5
+        let w = 203, h = 82.5, x = 0, y = 0
+        if (cAR > pAR) { h = 203 / cAR; y = (82.5 - h) / 2 }
+        else { w = 82.5 * cAR; x = (203 - w) / 2 }
+        if (i > 0) pdf.addPage([203, 82.5], 'landscape')
+        pdf.addImage(imgData, 'PNG', x, y, w, h)
+      }
+      const fs = booking.flightSeries
+      const name = fs ? `${fs.flt}_${fs.fromDestination?.code}_${fs.toDestination?.code}` : 'boarding_passes'
+      pdf.save(`boarding_passes_${name}_${booking.booking_reference}.pdf`)
+    } catch (e) {
+      console.error(e)
+      alert('Failed to generate PDF. Please try again.')
+    } finally {
+      setGeneratingPDF(false)
+    }
+  }
+
   return (
+    <>
+      <style>{`
+        @media print {
+          @page { size: 203mm 82.5mm landscape; margin: 0; }
+          body * { visibility: hidden; }
+          .boarding-pass-print-area, .boarding-pass-print-area * { visibility: visible; }
+          .boarding-pass-print-area { position: fixed; left: 0; top: 0; width: 100%; }
+          .boarding-pass { width: 203mm; min-height: 82.5mm; page-break-after: always; break-after: page; }
+          .boarding-pass:last-child { page-break-after: auto; break-after: auto; }
+        }
+      `}</style>
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div
-        className="relative z-10 w-full max-w-2xl max-h-[92vh] flex flex-col bg-white rounded-2xl shadow-2xl overflow-hidden"
+        className="relative z-10 w-full max-w-4xl max-h-[92vh] flex flex-col bg-white rounded-2xl shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -182,15 +311,35 @@ const BookingDetailsModal: React.FC<{ bookingId: number; onClose: () => void }> 
           ) : tab === 'tickets' ? (
             /* ─── Tickets tab ─── */
             <div className="px-5 py-4 space-y-6">
+              {/* Print / PDF actions */}
+              {passengers.length > 0 && (
+                <div className="flex items-center justify-end gap-2 no-print">
+                  <button
+                    onClick={handlePrint}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+                  >
+                    <Printer className="h-3.5 w-3.5" />Print
+                  </button>
+                  <button
+                    onClick={handleDownloadPDF}
+                    disabled={generatingPDF}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold rounded-lg bg-green-600 hover:bg-green-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    {generatingPDF ? 'Generating…' : 'Download PDF'}
+                  </button>
+                </div>
+              )}
               {passengers.length === 0 ? (
                 <p className="text-center text-[13px] text-gray-400 py-8">No passenger records found.</p>
               ) : (
-                passengers.map((bp: any, idx: number) => {
+                <div ref={boardingPassesRef} className="boarding-pass-print-area space-y-6 overflow-x-auto pb-2">
+                {passengers.map((bp: any, idx: number) => {
                   const pax = bp.passenger || {}
                   return (
                     <div key={bp.id}>
                       {/* Passenger label */}
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center gap-2 mb-2 no-print">
                         <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[11px] font-bold shrink-0"
                           style={{ background: '#1c2e61' }}>
                           {idx + 1}
@@ -208,6 +357,7 @@ const BookingDetailsModal: React.FC<{ bookingId: number; onClose: () => void }> 
                         date={String(booking.booking_date)}
                         pax={pax}
                         bp={bp}
+                        bookingRef={booking.booking_reference}
                       />
 
                       {/* Return ticket */}
@@ -229,12 +379,14 @@ const BookingDetailsModal: React.FC<{ bookingId: number; onClose: () => void }> 
                             date={booking.return_date}
                             pax={pax}
                             bp={bp}
+                            bookingRef={booking.booking_reference}
                           />
                         </div>
                       )}
                     </div>
                   )
-                })
+                })}
+                </div>
               )}
             </div>
           ) : (
@@ -396,6 +548,7 @@ const BookingDetailsModal: React.FC<{ bookingId: number; onClose: () => void }> 
         </div>
       </div>
     </div>
+    </>
   )
 }
 
