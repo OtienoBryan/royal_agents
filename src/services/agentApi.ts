@@ -23,6 +23,20 @@ class AgentApiService {
   // Agent profile
   getProfile() { return this.request<any>('/admin/agents/me') }
 
+  updateProfile(data: { name?: string; email?: string | null; country?: string | null; contact?: string | null }) {
+    return this.request<any>('/admin/agents/me', { method: 'PUT', body: JSON.stringify(data) })
+  }
+
+  changePassword(current_password: string, new_password: string) {
+    return this.request<{ message: string }>('/admin/agents/me/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password, new_password }),
+    })
+  }
+
+  // Full country list (DB-backed) — used for nationality dropdowns
+  getCountries() { return this.request<{ id: number; name: string; code?: string }[]>('/countries') }
+
   // Bookings filtered by agent
   getMyBookings(page = 1, limit = 50) {
     return this.request<any>(`/admin/bookings?page=${page}&limit=${limit}&agentFilter=me`)

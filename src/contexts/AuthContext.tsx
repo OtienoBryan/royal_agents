@@ -7,6 +7,7 @@ interface AgentUser {
   name: string
   email: string
   contact: string | null
+  country?: string | null
   agency_id: number | null
   agency?: { id: number; name: string; balance: number } | null
   balance?: number
@@ -18,6 +19,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>
   logout: () => void
   loading: boolean
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -71,8 +73,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(null)
   }
 
+  // Re-fetches the current agent record — used after the Settings page saves a
+  // profile change, so the sidebar/header (which read from this same `user`)
+  // reflect the new name/contact immediately instead of only after next login.
+  const refreshUser = async () => {
+    const token = localStorage.getItem('agentToken')
+    if (!token) return
+    const res = await fetch(`${API_BASE}/admin/agents/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (res.ok) setUser(await res.json())
+  }
+
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, logout, loading, refreshUser }}>
       {children}
     </AuthContext.Provider>
   )

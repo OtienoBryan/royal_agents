@@ -2,7 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Under OS/browser forced-colors (Windows high-contrast) mode, Chrome replaces
+ * author background-colors on html/body with a system color keyword — and
+ * recent Chrome versions serialize that system color as oklch() when read via
+ * getComputedStyle(). html2canvas (used for e-ticket/boarding-pass PDF export)
+ * unconditionally reads documentElement/body backgroundColor and throws
+ * "Attempting to parse an unsupported color function oklch" when it gets that
+ * back. Opting html/body out of forced-colors color substitution keeps our own
+ * white background literal, so html2canvas always gets a color it understands. */
+html, body {
+  forced-color-adjust: none;
+}
 
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
 
 @layer base {
   :root {

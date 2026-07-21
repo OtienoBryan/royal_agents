@@ -306,6 +306,8 @@ export interface BookingPassenger {
   passenger?: Passenger | null
   passenger_type: string
   fare_amount: number
+  travel_date: string | null
+  flight?: { id: number; flight_date: string | null } | null
   created_at: string
 }
 

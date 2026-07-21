@@ -36,11 +36,15 @@ const InvoiceDetailsPage: React.FC = () => {
         }
       })
       
-      // Filter by date
+      // Filter by the passenger's actual travel date — falls back to the flight's
+      // flight_date, then created_at, for older rows that predate travel_date.
       const dateKey = date // date is already in YYYY-MM-DD format from URL
       const filtered = allBookingPassengers.filter(bp => {
-        const bpDate = new Date(bp.created_at)
-        const bpDateKey = bpDate.toISOString().split('T')[0]
+        const bpDateKey = bp.travel_date
+          ? String(bp.travel_date).slice(0, 10)
+          : bp.flight?.flight_date
+          ? String(bp.flight.flight_date).slice(0, 10)
+          : new Date(bp.created_at).toISOString().split('T')[0]
         return bpDateKey === dateKey
       })
       

@@ -22,9 +22,10 @@ const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('en-US', { wee
 const ReservationModal: React.FC<{
   res: any
   agencyId: number | null
+  agentId?: number | null
   onClose: () => void
   onConfirmed: () => void
-}> = ({ res, agencyId, onClose, onConfirmed }) => {
+}> = ({ res, agencyId, agentId, onClose, onConfirmed }) => {
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState('')
   const [paymentMethod]      = useState('agency_balance')
@@ -85,6 +86,7 @@ const ReservationModal: React.FC<{
           booking_date: bookingDate,
           travel_date: res.reservation_date ? String(res.reservation_date).slice(0, 10) : bookingDate,
           agency_id: agencyId || undefined,
+          agent_id: agentId || undefined,
           override_total_amount: res.fare_amount ? Number(res.fare_amount) : undefined,
           is_return_trip: res.trip_type === 'return',
           return_date: res.return_date ? String(res.return_date).slice(0, 10) : undefined,
@@ -309,62 +311,10 @@ const ReservationModal: React.FC<{
   )
 }
 
-const RESERVATION_TTL_MS = 10 * 60 * 1000 // 10 minutes
-
-const COUNTRY_TZ: Record<string, string> = {
-  'Kenya': 'Africa/Nairobi', 'Uganda': 'Africa/Kampala', 'Tanzania': 'Africa/Dar_es_Salaam',
-  'Rwanda': 'Africa/Kigali', 'Burundi': 'Africa/Bujumbura', 'Ethiopia': 'Africa/Addis_Ababa',
-  'Somalia': 'Africa/Mogadishu', 'South Sudan': 'Africa/Juba', 'Sudan': 'Africa/Khartoum',
-  'Djibouti': 'Africa/Djibouti', 'Eritrea': 'Africa/Asmara', 'Egypt': 'Africa/Cairo',
-  'South Africa': 'Africa/Johannesburg', 'Nigeria': 'Africa/Lagos', 'Ghana': 'Africa/Accra',
-  'Zambia': 'Africa/Lusaka', 'Zimbabwe': 'Africa/Harare', 'Mozambique': 'Africa/Maputo',
-  'Malawi': 'Africa/Blantyre', 'Botswana': 'Africa/Gaborone', 'Namibia': 'Africa/Windhoek',
-  'United Kingdom': 'Europe/London', 'United States': 'America/New_York',
-  'India': 'Asia/Kolkata', 'UAE': 'Asia/Dubai', 'United Arab Emirates': 'Asia/Dubai', 'China': 'Asia/Shanghai',
-}
-
-// Parse a datetime string that may lack timezone info as local time in `tz`
-const parseInTz = (s: string, tz: string): number => {
-  if (s.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(s)) return new Date(s).getTime()
-  const iso = s.includes('T') ? s : s.replace(' ', 'T')
-  const naiveUtcMs = new Date(iso + 'Z').getTime()
-  try {
-    const fmt = (timeZone: string) => new Intl.DateTimeFormat('en-US', {
-      timeZone, hour12: false,
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-    })
-    const get = (parts: Intl.DateTimeFormatPart[], type: string) =>
-      parseInt(parts.find(p => p.type === type)!.value, 10)
-    const ref = new Date(naiveUtcMs)
-    const utcParts = fmt('UTC').formatToParts(ref)
-    const tzParts  = fmt(tz).formatToParts(ref)
-    const toMs = (p: Intl.DateTimeFormatPart[]) =>
-      Date.UTC(get(p,'year'), get(p,'month')-1, get(p,'day'), get(p,'hour'), get(p,'minute'), get(p,'second'))
-    const offsetMs = toMs(utcParts) - toMs(tzParts)
-    return naiveUtcMs - offsetMs
-  } catch {
-    return naiveUtcMs
-  }
-}
-
-const getCountdown = (createdAt: string | null | undefined, now: number, tz = 'Africa/Nairobi') => {
-  if (!createdAt) return { mm: 10, ss: 0, expired: false, remaining: RESERVATION_TTL_MS }
-  const expiresAt = parseInTz(createdAt, tz) + RESERVATION_TTL_MS
-  const remaining = Math.max(0, expiresAt - now)
-  return {
-    mm: Math.floor(remaining / 60000),
-    ss: Math.floor((remaining % 60000) / 1000),
-    expired: remaining === 0,
-    remaining,
-  }
-}
-
 // ─── Main Page ────────────────────────────────────────────────────────────────
 const MyReservations: React.FC = () => {
   const { user } = useAuth()
   const agencyId = (user as any)?.agency_id ?? null
-  const agentTz  = COUNTRY_TZ[(user as any)?.country ?? ''] ?? 'Africa/Nairobi'
   const [reservations, setReservations] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -490,6 +440,7 @@ const MyReservations: React.FC = () => {
         <ReservationModal
           res={selected}
           agencyId={agencyId}
+          agentId={user?.id}
           onClose={() => setSelected(null)}
           onConfirmed={() => {
             setSuccess(`Reservation ${selected.booking_reference} confirmed as booking!`)

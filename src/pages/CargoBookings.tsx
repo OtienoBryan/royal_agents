@@ -1,8 +1,24 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import html2canvas from 'html2canvas'
 import { adminApiService, CargoBooking, FlightSeries as FlightSeriesType, IataCode } from '../services/api'
-import { Calendar, Search, Package, Plane, RefreshCw, Plus, X, Link2, QrCode } from 'lucide-react'
-import { QRCodeSVG } from 'qrcode.react'
+import { Calendar, Search, Package, Plane, RefreshCw, Plus, X, Link2, Tag } from 'lucide-react'
+import JsBarcode from 'jsbarcode'
+
+// CODE128 barcode rendered to a canvas so html2canvas captures it for printing
+const Barcode: React.FC<{ value: string; height?: number }> = ({ value, height = 46 }) => {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    if (!ref.current || !value) return
+    try {
+      JsBarcode(ref.current, value, {
+        format: 'CODE128', displayValue: false, height, width: 2,
+        margin: 0, background: '#ffffff', lineColor: '#000000',
+      })
+    } catch { /* value not encodable — leave canvas blank */ }
+  }, [value, height])
+  return <canvas ref={ref} className="max-w-full" />
+}
 
 const CargoBookings: React.FC = () => {
   const navigate = useNavigate()
@@ -29,6 +45,7 @@ const CargoBookings: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [paymentTermFilter, setPaymentTermFilter] = useState<string>('all')
 
+  const tagRef = useRef<HTMLDivElement>(null)
   const [showNewModal, setShowNewModal] = useState(false)
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [showQrModal, setShowQrModal] = useState(false)
@@ -230,6 +247,21 @@ const CargoBookings: React.FC = () => {
     setSelectedQrCargo(null)
   }
 
+  const printTag = async () => {
+    if (!tagRef.current) return
+    const canvas  = await html2canvas(tagRef.current, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false })
+    const imgData = canvas.toDataURL('image/png', 1.0)
+    const win = window.open('', '_blank', 'width=700,height=600')
+    if (!win) return
+    win.document.write(`<!DOCTYPE html><html><head><title>Cargo Tag</title>
+      <style>@page{margin:8mm;}*{margin:0;padding:0;box-sizing:border-box;}
+      body{background:white;display:flex;justify-content:center;}
+      img{width:80mm;display:block;}</style>
+    </head><body><img src="${imgData}"/></body></html>`)
+    win.document.close()
+    win.onload = () => { win.focus(); win.print(); win.close() }
+  }
+
   const assignFlight = async () => {
     if (!selectedCargo) return
     try {
@@ -370,7 +402,7 @@ const CargoBookings: React.FC = () => {
         <div className="bg-white rounded-lg border p-3">
           <div className="text-[10px] text-gray-600 uppercase mb-1">Data Rule</div>
           <div className="text-[11px] text-gray-700">
-            Creating cargo uses an AWB-style record (shipper/consignee, routing, weights, charges, handling, status).
+            Creating cargo uses a tag-number record (shipper/consignee, routing, weights, charges, handling, status).
           </div>
         </div>
       </div>
@@ -382,7 +414,7 @@ const CargoBookings: React.FC = () => {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-700 uppercase tracking-wider">Date</th>
-                <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-700 uppercase tracking-wider">AWB</th>
+                <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-700 uppercase tracking-wider">Tag No.</th>
                 <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-700 uppercase tracking-wider">Shipper → Consignee</th>
                 <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-700 uppercase tracking-wider">Route</th>
                 <th className="px-2 py-1.5 text-left text-[10px] font-medium text-gray-700 uppercase tracking-wider">Flight</th>
@@ -430,10 +462,10 @@ const CargoBookings: React.FC = () => {
                         <button
                           onClick={() => openQrModal(b)}
                           className="inline-flex items-center gap-1 px-2 py-1 text-[10px] bg-emerald-50 text-emerald-700 rounded hover:bg-emerald-100"
-                          title="Cargo QR sticker"
+                          title="Cargo tag"
                         >
-                          <QrCode className="h-3 w-3" />
-                          QR
+                          <Tag className="h-3 w-3" />
+                          Tag
                         </button>
                         <button
                           onClick={() => openAssignModal(b)}
@@ -461,16 +493,16 @@ const CargoBookings: React.FC = () => {
         </div>
       </div>
 
-      {/* QR Sticker Modal */}
+      {/* Cargo Tag Modal */}
       {showQrModal && selectedQrCargo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={closeQrModal} />
-          <div className="relative w-full max-w-2xl bg-white rounded-lg shadow-xl border overflow-hidden">
+          <div className="relative w-full max-w-md bg-white rounded-lg shadow-xl border overflow-hidden">
             <div className="flex justify-between items-center px-4 py-3 border-b">
               <div>
-                <h2 className="text-sm font-bold text-gray-900">Cargo QR Sticker</h2>
+                <h2 className="text-sm font-bold text-gray-900">Cargo Tag</h2>
                 <p className="text-[11px] text-gray-500">
-                  AWB: <span className="font-mono">{selectedQrCargo.awb_number}</span>
+                  Tag No: <span className="font-mono">{selectedQrCargo.awb_number}</span>
                 </p>
               </div>
               <button onClick={closeQrModal} className="p-1 rounded hover:bg-gray-100">
@@ -478,39 +510,75 @@ const CargoBookings: React.FC = () => {
               </button>
             </div>
 
-            <div className="p-5">
-              <div className="border rounded-lg p-3 bg-white">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-[10px] text-gray-500 uppercase tracking-wide">Royal Air Cargo</div>
-                    <div className="text-[13px] font-bold text-gray-900 font-mono truncate">{selectedQrCargo.awb_number}</div>
-                    <div className="mt-1 text-[11px] text-gray-700 font-mono">
-                      {selectedQrCargo.origin}→{selectedQrCargo.destination}
-                    </div>
-                    <div className="text-[10px] text-gray-500 mt-1">
-                      Pieces: <span className="text-gray-700">{selectedQrCargo.pieces ?? '—'}</span> · Weight:{" "}
-                      <span className="text-gray-700">{(selectedQrCargo.gross_weight_kg ?? '—') as any}</span>kg
-                    </div>
-                    <div className="text-[10px] text-gray-500">
-                      Flight: <span className="text-gray-700">{selectedQrCargo.flightSeries?.flt || '—'}</span>
-                    </div>
+            {/* Tag preview — baggage-tag style strip */}
+            <div className="p-5 bg-gray-100 max-h-[70vh] overflow-y-auto flex justify-center">
+              <div ref={tagRef} className="bg-white border border-gray-300 w-[300px] flex-shrink-0" style={{ fontFamily: 'Arial, sans-serif' }}>
+                {/* Logo header */}
+                <div className="px-4 pt-4 pb-3 flex items-center justify-center gap-2 border-b border-dashed border-gray-300">
+                  <img src="/royal.png" alt="Royal Air" className="h-14 w-14 object-contain" />
+                  <div>
+                    <p className="text-[16px] font-extrabold tracking-widest text-gray-900 leading-none">ROYAL AIR</p>
+                    <p className="text-[9px] font-bold tracking-[0.3em] text-gray-500 uppercase mt-1">Cargo Division</p>
                   </div>
+                </div>
 
-                  <div className="shrink-0 flex flex-col items-center gap-1">
-                    <QRCodeSVG
-                      value={JSON.stringify({
-                        type: 'cargo_booking',
-                        id: selectedQrCargo.id,
-                        awb_number: selectedQrCargo.awb_number,
-                        origin: selectedQrCargo.origin,
-                        destination: selectedQrCargo.destination,
-                      })}
-                      size={180}
-                      level="M"
-                      includeMargin
-                    />
-                    <div className="text-[9px] text-gray-500 font-mono">ID:{selectedQrCargo.id}</div>
+                {/* Top barcode */}
+                <div className="px-4 pt-4 pb-2 flex flex-col items-center">
+                  <Barcode value={selectedQrCargo.awb_number} height={46} />
+                  <p className="text-[12px] font-mono font-bold tracking-[0.25em] text-gray-900 mt-1">{selectedQrCargo.awb_number}</p>
+                </div>
+
+                {/* Airline strip */}
+                <div className="bg-gray-900 px-4 py-1.5 flex items-center justify-between">
+                  <p className="text-white text-[10px] font-extrabold tracking-widest">ROYAL AIR CARGO</p>
+                  <p className="text-gray-300 text-[9px] font-mono">
+                    {selectedQrCargo.booking_date
+                      ? new Date(selectedQrCargo.booking_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }).toUpperCase()
+                      : ''}
+                  </p>
+                </div>
+
+                {/* Route: origin → destination */}
+                <div className="text-center pt-4 pb-3 border-b border-dashed border-gray-300">
+                  <div className="flex items-center justify-center gap-2">
+                    <span className="text-[40px] font-extrabold text-gray-900 leading-none tracking-wider">{selectedQrCargo.origin || '—'}</span>
+                    <span className="text-[24px] font-bold text-gray-500 leading-none">→</span>
+                    <span className="text-[40px] font-extrabold text-gray-900 leading-none tracking-wider">{selectedQrCargo.destination || '—'}</span>
                   </div>
+                  <p className="text-[12px] text-gray-800 font-mono font-bold mt-2 tracking-widest">
+                    FLIGHT {selectedQrCargo.flightSeries?.flt || '—'}
+                  </p>
+                </div>
+
+                {/* Shipment line */}
+                <div className="px-4 py-2 flex items-center justify-between text-[11px] font-mono font-bold text-gray-800 border-b border-dashed border-gray-300">
+                  <span>PCS {selectedQrCargo.pieces ?? '—'}</span>
+                  <span>WT {selectedQrCargo.gross_weight_kg ?? '—'} KG</span>
+                </div>
+
+                {/* Consignee */}
+                <div className="px-4 py-2 border-b border-dashed border-gray-300">
+                  <p className="text-[8px] uppercase tracking-widest text-gray-400 font-bold">Consignee</p>
+                  <p className="text-[11px] font-semibold text-gray-900 truncate">{selectedQrCargo.consignee_name || '—'}</p>
+                </div>
+
+                {/* Middle barcode */}
+                <div className="px-4 py-3 flex flex-col items-center border-b border-dashed border-gray-300">
+                  <Barcode value={selectedQrCargo.awb_number} height={34} />
+                </div>
+
+                {/* Repeated route (readable when strip is folded) */}
+                <div className="px-4 py-2 flex items-center justify-between border-b border-dashed border-gray-300">
+                  <p className="text-[22px] font-extrabold text-gray-900 leading-none tracking-wider">
+                    {selectedQrCargo.origin || '—'}<span className="text-gray-500 mx-1">→</span>{selectedQrCargo.destination || '—'}
+                  </p>
+                  <p className="text-[10px] font-mono font-bold text-gray-700">{selectedQrCargo.awb_number}</p>
+                </div>
+
+                {/* Bottom barcode */}
+                <div className="px-4 pt-3 pb-4 flex flex-col items-center">
+                  <Barcode value={selectedQrCargo.awb_number} height={46} />
+                  <p className="text-[12px] font-mono font-bold tracking-[0.25em] text-gray-900 mt-1">{selectedQrCargo.awb_number}</p>
                 </div>
               </div>
             </div>
@@ -523,10 +591,10 @@ const CargoBookings: React.FC = () => {
                 Close
               </button>
               <button
-                onClick={() => window.print()}
+                onClick={printTag}
                 className="px-3 py-1.5 text-[11px] bg-emerald-600 text-white rounded hover:bg-emerald-700"
               >
-                Print
+                Print Tag
               </button>
             </div>
           </div>
@@ -540,7 +608,7 @@ const CargoBookings: React.FC = () => {
           <div className="relative w-full max-w-4xl bg-white rounded-lg shadow-xl border max-h-[90vh] overflow-hidden">
             <div className="flex justify-between items-center px-4 py-3 border-b">
               <div>
-                <h2 className="text-sm font-bold text-gray-900">Post New Cargo (AWB)</h2>
+                <h2 className="text-sm font-bold text-gray-900">Post New Cargo</h2>
                 <p className="text-[11px] text-gray-500">Enter shipment + airline-required details. Fields with * are required.</p>
               </div>
               <button onClick={closeModal} className="p-1 rounded hover:bg-gray-100">
@@ -557,11 +625,11 @@ const CargoBookings: React.FC = () => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-[10px] font-medium text-gray-700 mb-1">AWB Number *</label>
+                  <label className="block text-[10px] font-medium text-gray-700 mb-1">Tag Number *</label>
                   <input
                     value={form.awb_number}
                     onChange={(e) => setForm(f => ({ ...f, awb_number: e.target.value }))}
-                    placeholder="e.g. 123-45678901"
+                    placeholder="e.g. LG-ABC123"
                     className="w-full px-2 py-1 text-[11px] border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
                   />
                 </div>

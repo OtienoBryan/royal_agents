@@ -7,29 +7,140 @@ const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', c
 
 const PAGE_SIZE_OPTIONS: Array<number | 'all'> = [10, 25, 50, 100, 'all']
 
-const csvEscape = (v: any) => {
-  const s = String(v ?? '')
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
+// jsPDF/jspdf-autotable are only needed when a PDF is actually requested —
+// dynamically imported here instead of at module load so this page doesn't pay
+// for them (a few hundred KB combined) just by being visited.
 
-const exportLedgerToCSV = (rows: any[], agencyName?: string) => {
-  const header = ['Date', 'Description', 'Reference', 'Debit', 'Credit', 'Balance']
-  const lines = rows.map(e => [
-    e.transactionDate ? new Date(e.transactionDate).toLocaleDateString() : '',
-    e.description || '',
-    e.reference || '',
-    Number(e.debit || 0),
-    Number(e.credit || 0),
-    Number(e.balance || 0),
-  ].map(csvEscape).join(','))
-  const csv = [header.join(','), ...lines].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `ledger_${(agencyName || 'agency').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
+const NAVY = [28, 46, 97] as const // #1c2e61
+
+// jsPDF has no native "clip image to circle" — the reliable way is to pre-render
+// the logo onto an offscreen canvas, clip it to a circular path there, and hand
+// jsPDF the resulting (now genuinely circular, transparent-outside-the-circle)
+// PNG data URL. Without this, addImage would just place a plain square image —
+// the white plate behind it wouldn't make the logo itself circular, only the
+// background around it.
+const loadCircularLogo = (src: string, diameterPx = 200): Promise<string> => new Promise((resolve, reject) => {
+  const img = new Image()
+  img.onload = () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = diameterPx
+    canvas.height = diameterPx
+    const ctx = canvas.getContext('2d')
+    if (!ctx) { reject(new Error('Canvas not supported')); return }
+    const r = diameterPx / 2
+    ctx.beginPath()
+    ctx.arc(r, r, r, 0, Math.PI * 2)
+    ctx.closePath()
+    ctx.clip()
+    // Fill the whole circle white first — with a contain-fit (below), the logo
+    // won't reach every edge of the circle, so without this the gaps would be
+    // transparent and show the navy header band through them instead of a
+    // clean white background.
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, diameterPx, diameterPx)
+    // Contain-fit (scale down to fit entirely inside, no cropping) with extra
+    // shrink so the logo sits with clear white margin instead of touching the
+    // circle's edge — a cover-fit here was cropping the logo's edges/corners.
+    const scale = Math.min(diameterPx / img.width, diameterPx / img.height) * 0.78
+    const w = img.width * scale
+    const h = img.height * scale
+    ctx.drawImage(img, (diameterPx - w) / 2, (diameterPx - h) / 2, w, h)
+    resolve(canvas.toDataURL('image/png'))
+  }
+  img.onerror = reject
+  img.src = src
+})
+
+const exportLedgerToPDF = async (rows: any[], agencyName: string | undefined, currentBalance: number) => {
+  const [{ default: jsPDF }, { autoTable }, logo] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+    loadCircularLogo('/royal.png').catch(() => null),
+  ])
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const pageWidth = doc.internal.pageSize.getWidth()
+
+  // ── Header band ──────────────────────────────────────────────────────────
+  doc.setFillColor(...NAVY)
+  doc.rect(0, 0, pageWidth, 30, 'F')
+
+  if (logo) {
+    // White plate behind the logo so it reads cleanly against the navy band,
+    // matching the circular logo badge used on the e-ticket/boarding pass.
+    doc.setFillColor(255, 255, 255)
+    doc.circle(20, 15, 8.5, 'F')
+    doc.addImage(logo, 'PNG', 13, 8, 14, 14)
+  }
+
+  doc.setTextColor(255, 255, 255)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  doc.text('ROYAL AIR', 34, 13)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.text('Agency Ledger Statement', 34, 19)
+
+  doc.setFontSize(7)
+  doc.setTextColor(220, 225, 240)
+  doc.text(`Generated ${new Date().toLocaleString()}`, pageWidth - 14, 26, { align: 'right' })
+
+  // ── Agency / balance summary panel ──────────────────────────────────────
+  doc.setFillColor(245, 247, 250)
+  doc.rect(0, 30, pageWidth, 18, 'F')
+  doc.setDrawColor(225, 228, 235)
+  doc.line(0, 48, pageWidth, 48)
+
+  doc.setTextColor(30, 30, 30)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  doc.text(agencyName || 'Agency', 14, 40)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.setTextColor(90, 90, 90)
+  doc.text('Current Balance', pageWidth - 14, 37, { align: 'right' })
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(13)
+  doc.setTextColor(...NAVY)
+  doc.text(fmt(currentBalance), pageWidth - 14, 43, { align: 'right' })
+
+  autoTable(doc, {
+    startY: 54,
+    head: [['Date', 'Description', 'Reference', 'Debit', 'Credit', 'Balance']],
+    body: rows.map(e => [
+      e.transactionDate ? new Date(e.transactionDate).toLocaleDateString() : '—',
+      e.description || '—',
+      e.reference || '—',
+      Number(e.debit)  > 0 ? fmt(Number(e.debit))  : '—',
+      Number(e.credit) > 0 ? fmt(Number(e.credit)) : '—',
+      fmt(Number(e.balance || 0)),
+    ]),
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [...NAVY], textColor: 255 },
+    alternateRowStyles: { fillColor: [248, 249, 251] },
+    columnStyles: {
+      3: { halign: 'right' },
+      4: { halign: 'right' },
+      5: { halign: 'right' },
+    },
+    margin: { bottom: 16 },
+  })
+
+  // Footer with correct "Page X of Y" — done as a pass over all pages after the
+  // table finishes, since the total page count isn't known until then (a
+  // didDrawPage hook only sees pages rendered so far, not the eventual total).
+  const totalPages = doc.getNumberOfPages()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7)
+    doc.setTextColor(150, 150, 150)
+    doc.text('Royal Air', 14, pageHeight - 8)
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, pageHeight - 8, { align: 'right' })
+  }
+
+  doc.save(`ledger_${(agencyName || 'agency').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`)
 }
 
 const MyBalance: React.FC = () => {
@@ -41,6 +152,7 @@ const MyBalance: React.FC = () => {
   const [search, setSearch] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [exportingPDF, setExportingPDF] = useState(false)
 
   const agencyId = (user as any)?.agency_id
 
@@ -79,6 +191,18 @@ const MyBalance: React.FC = () => {
   const totalDebit  = ledger.reduce((s: number, e: any) => s + Number(e.debit  || 0), 0)
   const totalCredit = ledger.reduce((s: number, e: any) => s + Number(e.credit || 0), 0)
 
+  const handleExportPDF = async () => {
+    setExportingPDF(true)
+    try {
+      await exportLedgerToPDF(filteredLedger, (user as any)?.agency?.name, balance)
+    } catch (e) {
+      console.error(e)
+      alert('Failed to generate PDF. Please try again.')
+    } finally {
+      setExportingPDF(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-3">
       <div className="mb-3">
@@ -107,13 +231,15 @@ const MyBalance: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
         <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
           <h2 className="text-[12px] font-semibold text-gray-800">Transaction History</h2>
-          <button
-            onClick={() => exportLedgerToCSV(filteredLedger, (user as any)?.agency?.name)}
-            disabled={filteredLedger.length === 0}
-            className="flex items-center gap-1 px-2 py-1 text-[11px] bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Download className="h-3 w-3" />Export to CSV
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportPDF}
+              disabled={filteredLedger.length === 0 || exportingPDF}
+              className="flex items-center gap-1 px-2 py-1 text-[11px] bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download className="h-3 w-3" />{exportingPDF ? 'Generating…' : 'Export to PDF'}
+            </button>
+          </div>
         </div>
         <div className="px-3 py-2 border-b border-gray-100 flex items-center gap-2 flex-wrap">
           <div className="relative">

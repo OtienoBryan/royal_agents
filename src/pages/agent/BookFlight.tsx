@@ -36,13 +36,15 @@ const todayInTz = (tz: string): string =>
 
 const ID_TYPES = [{ v: '', l: '— Select —' }, { v: 'national_id', l: 'National ID' }, { v: 'passport', l: 'Passport' }, { v: 'travel_document', l: 'Travel Document' }]
 const TITLES   = ['', 'Mr.', 'Mrs.', 'Ms.', 'Dr.', 'Prof.']
-const COUNTRIES = ['Afghanistan','Albania','Algeria','Angola','Argentina','Armenia','Australia','Austria','Azerbaijan','Bahamas','Bahrain','Bangladesh','Belgium','Bhutan','Bolivia','Botswana','Brazil','Brunei','Bulgaria','Cambodia','Cameroon','Canada','Chile','China','Colombia','Congo','Costa Rica','Croatia','Cuba','Cyprus','Czech Republic','Denmark','Djibouti','Ecuador','Egypt','Estonia','Ethiopia','Fiji','Finland','France','Gabon','Georgia','Germany','Ghana','Greece','Guatemala','Hungary','Iceland','India','Indonesia','Iran','Iraq','Ireland','Israel','Italy','Jamaica','Japan','Jordan','Kazakhstan','Kenya','Kuwait','Kyrgyzstan','Laos','Latvia','Lebanon','Libya','Lithuania','Luxembourg','Malaysia','Maldives','Mali','Malta','Mexico','Mongolia','Montenegro','Morocco','Mozambique','Myanmar','Namibia','Nepal','Netherlands','New Zealand','Nicaragua','Nigeria','Norway','Oman','Pakistan','Panama','Peru','Philippines','Poland','Portugal','Qatar','Romania','Russia','Rwanda','Saudi Arabia','Senegal','Serbia','Singapore','Slovakia','Slovenia','Somalia','South Africa','South Korea','South Sudan','Spain','Sri Lanka','Sudan','Sweden','Switzerland','Syria','Taiwan','Tanzania','Thailand','Tunisia','Turkey','Uganda','Ukraine','United Arab Emirates','United Kingdom','United States','Uruguay','Uzbekistan','Venezuela','Vietnam','Yemen','Zambia','Zimbabwe']
+// Fallback only — used if the DB-backed /countries fetch fails. Kept intentionally
+// short since the real list (fetched at runtime) is the complete, authoritative one.
+const FALLBACK_COUNTRIES = ['Afghanistan','Albania','Algeria','Angola','Argentina','Armenia','Australia','Austria','Azerbaijan','Bahamas','Bahrain','Bangladesh','Belgium','Bhutan','Bolivia','Botswana','Brazil','Brunei','Bulgaria','Cambodia','Cameroon','Canada','Chile','China','Colombia','Comoros','Congo','Costa Rica','Croatia','Cuba','Cyprus','Czech Republic','Denmark','Djibouti','Ecuador','Egypt','Estonia','Ethiopia','Fiji','Finland','France','Gabon','Georgia','Germany','Ghana','Greece','Guatemala','Hungary','Iceland','India','Indonesia','Iran','Iraq','Ireland','Israel','Italy','Jamaica','Japan','Jordan','Kazakhstan','Kenya','Kuwait','Kyrgyzstan','Laos','Latvia','Lebanon','Libya','Lithuania','Luxembourg','Malaysia','Maldives','Mali','Malta','Mexico','Mongolia','Montenegro','Morocco','Mozambique','Myanmar','Namibia','Nepal','Netherlands','New Zealand','Nicaragua','Nigeria','Norway','Oman','Pakistan','Panama','Peru','Philippines','Poland','Portugal','Qatar','Romania','Russia','Rwanda','Saudi Arabia','Senegal','Serbia','Singapore','Slovakia','Slovenia','Somalia','South Africa','South Korea','South Sudan','Spain','Sri Lanka','Sudan','Sweden','Switzerland','Syria','Taiwan','Tanzania','Thailand','Tunisia','Turkey','Uganda','Ukraine','United Arab Emirates','United Kingdom','United States','Uruguay','Uzbekistan','Venezuela','Vietnam','Yemen','Zambia','Zimbabwe']
 
 interface PaxForm { title: string; name: string; email: string; phone: string; nationality: string; id_type: string; id_number: string }
 const emptyPax = (): PaxForm => ({ title: '', name: '', email: '', phone: '', nationality: '', id_type: '', id_number: '' })
 
 // ─── Country dropdown ─────────────────────────────────────────────────────────
-const CountrySelect: React.FC<{ value: string; onChange: (v: string) => void; required?: boolean }> = ({ value, onChange, required }) => {
+const CountrySelect: React.FC<{ value: string; onChange: (v: string) => void; required?: boolean; countries: string[] }> = ({ value, onChange, required, countries }) => {
   const [open, setOpen] = useState(false)
   const [q, setQ]       = useState('')
   const ref = React.useRef<HTMLDivElement>(null)
@@ -50,7 +52,7 @@ const CountrySelect: React.FC<{ value: string; onChange: (v: string) => void; re
     const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
     document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h)
   }, [])
-  const filtered = q ? COUNTRIES.filter(c => c.toLowerCase().includes(q.toLowerCase())) : COUNTRIES
+  const filtered = q ? countries.filter(c => c.toLowerCase().includes(q.toLowerCase())) : countries
   return (
     <div ref={ref} className="relative">
       <button type="button" onClick={() => setOpen(o => !o)}
@@ -311,8 +313,15 @@ const BookFlight: React.FC = () => {
   const [allSeries,          setAllSeries]          = useState<any[]>([])
   const [bookedByDate,       setBookedByDate]       = useState<Record<string, number>>({})
   const [returnBookedByDate, setReturnBookedByDate] = useState<Record<string, number>>({})
+  const [countries,          setCountries]          = useState<string[]>(FALLBACK_COUNTRIES)
 
   const totalPax = adults + children + infants
+
+  useEffect(() => {
+    agentApi.getCountries()
+      .then(list => { if (list?.length) setCountries(list.map(c => c.name).sort()) })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     agentApi.getFlightSeries(1, 1000).then(r => setAllSeries(r.flightSeries || [])).catch(() => {})
@@ -394,6 +403,7 @@ const BookFlight: React.FC = () => {
         await apiPost('/admin/bookings', {
           flight_series_id: fs.id, passengers, payment_method: 'agency_balance',
           booking_date: date, travel_date: date, agency_id: agencyId || undefined,
+          agent_id: agentId || undefined,
           notes: notes || undefined, is_return_trip: isReturn,
           return_date: isReturn && returnDate ? returnDate : undefined,
           return_flight_series_id: isReturn && returnFsId ? Number(returnFsId) : undefined,
@@ -588,9 +598,9 @@ const BookFlight: React.FC = () => {
                 </span>
               </div>
 
-              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm">
                 {/* Passenger tab bar */}
-                <div className="flex border-b border-gray-100 overflow-x-auto">
+                <div className="flex border-b border-gray-100 overflow-x-auto rounded-t-2xl">
                   {pax.map((p, i) => {
                     const done  = !!(p.name && p.email && p.phone && p.nationality && p.id_type && p.id_number && p.title)
                     const type  = i < adults ? 'Adult' : i < adults + children ? 'Child' : 'Infant'
@@ -646,7 +656,7 @@ const BookFlight: React.FC = () => {
                     <div className="grid grid-cols-3 gap-3">
                       <div>
                         <label className="block text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-1.5">Nationality *</label>
-                        <CountrySelect value={p.nationality} onChange={v => updatePax(i, 'nationality', v)} required />
+                        <CountrySelect value={p.nationality} onChange={v => updatePax(i, 'nationality', v)} required countries={countries} />
                       </div>
                       <div>
                         <label className="block text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-1.5">ID Type *</label>

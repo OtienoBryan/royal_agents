@@ -18,7 +18,7 @@ const Login: React.FC = () => {
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
   const submitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const { isInactive } = useInactivity({ timeout: 10000 })
+  const { isInactive } = useInactivity({ timeout: 600000 }) // 10 minutes
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -150,7 +150,6 @@ const Login: React.FC = () => {
               />
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-base-content">Agent Portal</h1>
-            <p className="text-sm text-base-content/60 mt-1">Sign in to manage bookings and float balance</p>
           </div>
 
           <form className="space-y-4" onSubmit={handleSubmit}>
@@ -197,7 +196,7 @@ const Login: React.FC = () => {
                   required
                   disabled={loading}
                   className="input input-bordered w-full pl-10 pr-3 py-2 text-sm focus:input-primary disabled:opacity-50 disabled:cursor-not-allowed"
-                  placeholder="name@agency.com"
+                  placeholder="Email Address"
                   value={formData.email}
                   onChange={handleChange}
                   autoComplete="email"

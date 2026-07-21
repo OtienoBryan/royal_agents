@@ -46,17 +46,22 @@ const Invoices: React.FC = () => {
         }
       });
       
-      // Group by date (using created_at)
+      // Group by the passenger's actual travel date (not when the booking was made) —
+      // falls back to the flight's flight_date, then created_at, for older rows that
+      // predate the travel_date column.
       const dateMap: { [key: string]: BookingPassenger[] } = {};
-      
+
       allBookingPassengers.forEach(bp => {
-        const date = new Date(bp.created_at);
-        const dateKey = date.toISOString().split('T')[0]; // YYYY-MM-DD format
-        
+        const dateKey = bp.travel_date
+          ? String(bp.travel_date).slice(0, 10)
+          : bp.flight?.flight_date
+          ? String(bp.flight.flight_date).slice(0, 10)
+          : new Date(bp.created_at).toISOString().split('T')[0];
+
         if (!dateMap[dateKey]) {
           dateMap[dateKey] = [];
         }
-        
+
         dateMap[dateKey].push(bp);
       });
       
